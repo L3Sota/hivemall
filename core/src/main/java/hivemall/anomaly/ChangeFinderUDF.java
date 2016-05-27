@@ -21,6 +21,8 @@ package hivemall.anomaly;
 import hivemall.UDFWithOptions;
 import hivemall.utils.hadoop.HiveUtils;
 import hivemall.utils.lang.Primitives;
+import hivemall.utils.math.MultivariateGaussianDistribution;
+
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Iterator;
@@ -30,7 +32,6 @@ import javax.annotation.Nonnull;
 
 import org.apache.commons.cli.CommandLine;
 import org.apache.commons.cli.Options;
-import org.apache.commons.math3.distribution.MultivariateNormalDistribution;
 import org.apache.commons.math3.distribution.NormalDistribution;
 import org.apache.commons.math3.linear.ArrayRealVector;
 import org.apache.commons.math3.linear.BlockRealMatrix;
@@ -53,7 +54,8 @@ import org.apache.hadoop.hive.serde2.objectinspector.primitive.DoubleObjectInspe
 import org.apache.hadoop.hive.serde2.objectinspector.primitive.PrimitiveObjectInspectorFactory;
 import org.apache.hadoop.io.BooleanWritable;
 
-@Description(name = "cf_detect",
+@Description(
+        name = "cf_detect",
         value = "_FUNC_(array<double> x [, const string options]) - Returns anomaly/change-point scores and decisions")
 public class ChangeFinderUDF extends UDFWithOptions {
     private ListObjectInspector xOI;
@@ -159,8 +161,8 @@ public class ChangeFinderUDF extends UDFWithOptions {
         }
         xOI = HiveUtils.asListOI(argOIs[0]);
         if (!HiveUtils.isNumberOI(xOI.getListElementObjectInspector())) {
-            throw new UDFArgumentTypeException(0,
-                "Unexpected Object inspector for array<double>: " + argOIs[0]);
+            throw new UDFArgumentTypeException(0, "Unexpected Object inspector for array<double>: "
+                    + argOIs[0]);
         } else {
             xContentOI = (DoubleObjectInspector) xOI.getListElementObjectInspector();
         }
@@ -201,10 +203,9 @@ public class ChangeFinderUDF extends UDFWithOptions {
         }
         xMeanEstimate.mapDivideToSelf(xRunningWindowSize + 1.d);
         RealMatrix xResiduals = new BlockRealMatrix(xRunningWindowSize + 1, dimensions);//+1 for current value
-        RealMatrix xResidualBackshifts =
-                new BlockRealMatrix(xRunningWindowSize + 1, dimensions * xRunningWindowSize);
-        for (int forward = 0, backward =
-                xRunningWindowSize - 1; forward < xRunningWindowSize; forward++, backward--) {
+        RealMatrix xResidualBackshifts = new BlockRealMatrix(xRunningWindowSize + 1, dimensions
+                * xRunningWindowSize);
+        for (int forward = 0, backward = xRunningWindowSize - 1; forward < xRunningWindowSize; forward++, backward--) {
             xResiduals.setRowVector(backward, xHistory.get(forward));
         }
         xResiduals.setRowVector(xRunningWindowSize, x.subtract(xMeanEstimate));
@@ -217,10 +218,12 @@ public class ChangeFinderUDF extends UDFWithOptions {
                     rowStart + j, colStart + j * dimensions);
             }
         }
-        xModelMatrix = xResiduals.transpose().multiply(xResidualBackshifts).multiply(
-            MatrixUtils.inverse(xResidualBackshifts.transpose().multiply(xResidualBackshifts)));
-        xEstimate = xMeanEstimate.add(
-            xModelMatrix.operate(xResidualBackshifts.getRowVector(xRunningWindowSize)));
+        xModelMatrix = xResiduals.transpose()
+                                 .multiply(xResidualBackshifts)
+                                 .multiply(
+                                     MatrixUtils.inverse(xResidualBackshifts.transpose().multiply(
+                                         xResidualBackshifts)));
+        xEstimate = xMeanEstimate.add(xModelMatrix.operate(xResidualBackshifts.getRowVector(xRunningWindowSize)));
 
         xModelCovar = xResiduals.subtract(xResidualBackshifts.multiply(xModelMatrix.transpose()));
         xModelCovar = xModelCovar.transpose()
@@ -268,14 +271,13 @@ public class ChangeFinderUDF extends UDFWithOptions {
 
     private void xTrain() {
         //mean vector
-        xMeanEstimate = xMeanEstimate.mapMultiplyToSelf((1.d - xForgetfulness))
-                                     .add(x.mapMultiply(xForgetfulness));
+        xMeanEstimate = xMeanEstimate.mapMultiplyToSelf((1.d - xForgetfulness)).add(
+            x.mapMultiply(xForgetfulness));
 
         RealMatrix xResiduals = new BlockRealMatrix(xRunningWindowSize + 1, dimensions);//+1 for current value
-        RealMatrix xResidualBackshifts =
-                new BlockRealMatrix(xRunningWindowSize + 1, dimensions * xRunningWindowSize);
-        for (int forward = 0, backward =
-                xRunningWindowSize - 1; forward < xRunningWindowSize; forward++, backward--) {
+        RealMatrix xResidualBackshifts = new BlockRealMatrix(xRunningWindowSize + 1, dimensions
+                * xRunningWindowSize);
+        for (int forward = 0, backward = xRunningWindowSize - 1; forward < xRunningWindowSize; forward++, backward--) {
             xResiduals.setRowVector(backward, xHistory.get(forward));
         }
         xResiduals.setRowVector(xRunningWindowSize, x.subtract(xMeanEstimate));
@@ -288,10 +290,12 @@ public class ChangeFinderUDF extends UDFWithOptions {
                     rowStart + j, colStart + j * dimensions);
             }
         }
-        xModelMatrix = xResiduals.transpose().multiply(xResidualBackshifts).multiply(
-            MatrixUtils.inverse(xResidualBackshifts.transpose().multiply(xResidualBackshifts)));
-        xEstimate = xMeanEstimate.add(
-            xModelMatrix.operate(xResidualBackshifts.getRowVector(xRunningWindowSize)));
+        xModelMatrix = xResiduals.transpose()
+                                 .multiply(xResidualBackshifts)
+                                 .multiply(
+                                     MatrixUtils.inverse(xResidualBackshifts.transpose().multiply(
+                                         xResidualBackshifts)));
+        xEstimate = xMeanEstimate.add(xModelMatrix.operate(xResidualBackshifts.getRowVector(xRunningWindowSize)));
 
         xModelCovar = xResiduals.subtract(xResidualBackshifts.multiply(xModelMatrix.transpose()));
         xModelCovar = xModelCovar.transpose()
@@ -345,15 +349,15 @@ public class ChangeFinderUDF extends UDFWithOptions {
     }
 
     private double calcScore(double y, double mean, double var) {
-        return -Math.log(
-            Math.pow(new NormalDistribution(mean, Math.sqrt(var)).density(y), 1.d / dimensions));
+        return -Math.log(Math.pow(new NormalDistribution(mean, Math.sqrt(var)).density(y),
+            1.d / dimensions));
     }
 
     private double calcScore(RealVector x, RealVector means, RealMatrix covar) {
-        return -Math.log(Math.pow(
-            new MultivariateNormalDistribution(null, means.toArray(), covar.getData()).density(
-                x.toArray()),
-            1.d / dimensions));
+        MultivariateGaussianDistribution dist = new MultivariateGaussianDistribution(
+            means.toArray(), covar.getData());
+        double pdf = dist.p(x.toArray());
+        return -Math.log(Math.pow(pdf, 1.d / dimensions));
     }
 
     //package-private getters for ChangeFinderUDFTest
